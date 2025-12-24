@@ -1,54 +1,117 @@
-const userState = {}
+// bot/state.js
 
-function initUser(chatId) {
-  if (!userState[chatId]) {
-    userState[chatId] = {
-      language: 'tr',
-      category: null,
-      services: [],
-      date: null
+const state = {}
+
+/**
+ * ساخت یا دریافت state کاربر
+ * state فقط در حافظه است (MVP)
+ */
+function getState(chatId) {
+  if (!state[chatId]) {
+    state[chatId] = {
+      // UI / flow
+      step: 'START',
+
+      // زبان
+      lang: 'fa',
+
+      // انتخاب‌ها (سازگار با UI فعلی)
+      categoryId: null,
+      date: null,
+      time: null,
+
+      // پیش‌نویس رزرو (برای آینده)
+      draft: {
+        services: [],     // چند سرویسی
+        compositeId: null,
+        staffId: null,
+        duration: null
+      }
     }
   }
+  return state[chatId]
 }
 
+/* ---------- UI setters (فعلی – بدون تغییر منطق) ---------- */
+
 function setLanguage(chatId, lang) {
-  initUser(chatId)
-  userState[chatId].language = lang
+  getState(chatId).lang = lang
 }
 
 function setCategory(chatId, categoryId) {
-  initUser(chatId)
-  userState[chatId].category = categoryId
+  getState(chatId).categoryId = categoryId
 }
 
 function getCategory(chatId) {
-  return userState[chatId]?.category || null
-}
-
-function setServices(chatId, services) {
-  initUser(chatId)
-  userState[chatId].services = services
-}
-
-function getServices(chatId) {
-  return userState[chatId]?.services || []
+  return getState(chatId).categoryId
 }
 
 function setDate(chatId, date) {
-  initUser(chatId)
-  userState[chatId].date = date
+  getState(chatId).date = date
 }
 
-function getDate(chatId) {
-  return userState[chatId]?.date || null
+function setTime(chatId, time) {
+  getState(chatId).time = time
+}
+
+/* ---------- Flow control ---------- */
+
+function setStep(chatId, step) {
+  getState(chatId).step = step
+}
+
+function getStep(chatId) {
+  return getState(chatId).step
+}
+
+/* ---------- Draft helpers (آینده) ---------- */
+
+function updateDraft(chatId, patch) {
+  getState(chatId).draft = {
+    ...getState(chatId).draft,
+    ...patch
+  }
+}
+
+function resetDraft(chatId) {
+  getState(chatId).draft = {
+    services: [],
+    compositeId: null,
+    staffId: null,
+    duration: null
+  }
+}
+
+/* ---------- Reset کامل مکالمه ---------- */
+function resetState(chatId) {
+  delete state[chatId]
+}
+function resetState(chatId) {
+  state[chatId] = {}
 }
 
 module.exports = {
+  resetState,
+  // بقیه export ها
+}
+
+module.exports = {
+  // core
+  getState,
+  resetState,
+
+  // UI
   setLanguage,
   setCategory,
   getCategory,
-  setServices,
-  getServices,
   setDate,
-  getDate
+  setTime,
+
+  // flow
+  setStep,
+  getStep,
+
+  // draft
+  updateDraft,
+  resetDraft
 }
