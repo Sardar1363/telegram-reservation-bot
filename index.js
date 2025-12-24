@@ -129,7 +129,17 @@ const server = http.createServer((req, res) => {
           }
 
           // TOGGLE SERVICE → EDIT SAME MESSAGE (کلیدی‌ترین اصلاح)
-          if (key.startsWith('SERVICE_')) {
+          if (key.startsWith('SERVICE_')) {await sendMessage(
+  chatId,
+  'وقتی انتخاب سرویس‌ها تمام شد، ادامه بده:',
+  {
+    inline_keyboard: [
+      [{ text: '✅ ادامه', callback_data: 'CONTINUE_SERVICES' }]
+    ]
+  }
+)
+
+
             toggleService(chatId, key.replace('SERVICE_', ''))
             const st = getState(chatId)
 
