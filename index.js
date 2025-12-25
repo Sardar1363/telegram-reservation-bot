@@ -5,24 +5,24 @@ const fetch = (...args) =>
   import('node-fetch').then(({ default: fetch }) => fetch(...args))
 
 const {
-  languageKeyboard,
-  categoryKeyboard,
-  serviceKeyboard,
+  quickDateKeyboard,
+  calendarKeyboard,
   timeRangeKeyboard,
-  moreTimesKeyboard,
+  timeListKeyboard,
   MORNING,
   NOON,
   EVENING
 } = require('./bot/keyboard')
 
 const {
-  resetState,
   getState,
-  setLanguage,
+  resetState,
+  setLastMessage,
   setCategory,
   toggleService,
-  setTimeRange,
-  setTime
+  setDate,
+  setTime,
+  setCalendarPage
 } = require('./bot/state')
 
 const catalog = require('./data/catalog')
@@ -31,7 +31,7 @@ const BOT_TOKEN = process.env.BOT_TOKEN
 const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`
 const PORT = process.env.PORT || 3000
 
-// ---------- Telegram helpers ----------
+// ---------------- Telegram helpers ----------------
 async function tg(method, payload) {
   const res = await fetch(`${TELEGRAM_API}/${method}`, {
     method: 'POST',
@@ -42,11 +42,15 @@ async function tg(method, payload) {
 }
 
 async function sendMessage(chatId, text, keyboard = null) {
-  return tg('sendMessage', {
+  const res = await tg('sendMessage', {
     chat_id: chatId,
     text,
     reply_markup: keyboard
   })
+  if (res?.result?.message_id) {
+    setLastMessage(chatId, res.result.message_id)
+  }
+  return res
 }
 
 async function editMessage(chatId, messageId, text, keyboard = null) {
@@ -62,14 +66,16 @@ async function answerCallback(callbackId) {
   return tg('answerCallbackQuery', { callback_query_id: callbackId })
 }
 
-// ---------- Server ----------
+// ---------------- Server ----------------
 const server = http.createServer((req, res) => {
+  // health check
   if (req.method === 'GET' && req.url === '/') {
     res.writeHead(200)
     res.end('Bot is running')
     return
   }
 
+  // telegram webhook
   if (req.method === 'POST' && req.url.startsWith('/telegram/webhook')) {
     let body = ''
     req.on('data', chunk => (body += chunk))
@@ -77,121 +83,184 @@ const server = http.createServer((req, res) => {
     req.on('end', async () => {
       try {
         const update = JSON.parse(body || '{}')
-
         const msg = update.message
         const cb = update.callback_query
 
-        // ---- /start ----
+        // ---------- /start ----------
         if (msg && msg.text === '/start') {
           const chatId = msg.chat.id
           resetState(chatId)
 
           await sendMessage(
             chatId,
-            'سلام 👋\nلطفاً زبان خود را انتخاب کنید:',
-            languageKeyboard()
+            'Merhaba 👋\nLütfen hizmetleri seçiniz ve devam ediniz.'
           )
+
+          res.writeHead(200)
+          res.end('ok')
+          return
         }
 
-        // ---- callbacks ----
+        // ---------- CALLBACK ----------
         if (cb) {
-          const chatId = cb.message.chat.id
-          const messageId = cb.message.message_id
-          const key = cb.data
-
           await answerCallback(cb.id)
 
-          // LANGUAGE
-          if (key.startsWith('LANG_')) {
-            setLanguage(chatId, key.replace('LANG_', ''))
-            await sendMessage(chatId, 'دسته‌بندی خدمات را انتخاب کنید:', categoryKeyboard())
-            res.writeHead(200); res.end('ok'); return
+          const chatId = cb.message.chat.id
+          const state = getState(chatId)
+          const key = cb.data
+
+          // ---- SERVICES (assumes you already reached service confirm) ----
+          if (key === 'CONTINUE_SERVICES') {
+            // بعد از تأیید سرویس‌ها → انتخاب روز
+            await sendMessage(
+              chatId,
+              '📅 Lütfen randevu günü seçiniz:',
+              quickDateKeyboard()
+            )
+
+            res.writeHead(200)
+            res.end('ok')
+            return
           }
 
-          // CHANGE CATEGORY
-          if (key === 'CHANGE_CATEGORY') {
-            setCategory(chatId, null)
-            await sendMessage(chatId, 'دسته‌بندی خدمات را انتخاب کنید:', categoryKeyboard())
-            res.writeHead(200); res.end('ok'); return
-          }
-
-          // CATEGORY → show services (NEW message)
-          if (key.startsWith('CAT_')) {
-            setCategory(chatId, key.replace('CAT_', ''))
-            const st = getState(chatId)
+          // ---- DATE QUICK / CALENDAR ----
+          if (key.startsWith('DATE_')) {
+            const date = key.replace('DATE_', '')
+            setDate(chatId, date)
 
             await sendMessage(
               chatId,
-              'سرویس‌های مورد نظر را انتخاب کنید:',
-              serviceKeyboard(st.categoryId, st.services)
+              '⏰ Lütfen saat aralığını seçiniz:',
+              timeRangeKeyboard()
             )
-            res.writeHead(200); res.end('ok'); return
+
+            res.writeHead(200)
+            res.end('ok')
+            return
           }
 
-          // TOGGLE SERVICE → EDIT SAME MESSAGE (کلیدی‌ترین اصلاح)
-          if (key.startsWith('SERVICE_')) {await sendMessage(
-  chatId,
-  'وقتی انتخاب سرویس‌ها تمام شد، ادامه بده:',
-  {
-    inline_keyboard: [
-      [{ text: '✅ ادامه', callback_data: 'CONTINUE_SERVICES' }]
-    ]
-  }
-)
-
-
-            toggleService(chatId, key.replace('SERVICE_', ''))
-            const st = getState(chatId)
-
-            await editMessage(
+          if (key === 'OPEN_CALENDAR') {
+            setCalendarPage(chatId, 0)
+            await sendMessage(
               chatId,
-              messageId,
-              'سرویس‌های مورد نظر را انتخاب کنید:',
-              serviceKeyboard(st.categoryId, st.services)
+              '📅 Uygun günler:',
+              calendarKeyboard(0)
+            )
+
+            res.writeHead(200)
+            res.end('ok')
+            return
+          }
+
+          if (key === 'CALENDAR_NEXT') {
+            const next = (state.calendarPage || 0) + 1
+            setCalendarPage(chatId, next)
+
+            await sendMessage(
+              chatId,
+              '📅 Uygun günler:',
+              calendarKeyboard(next)
+            )
+
+            res.writeHead(200)
+            res.end('ok')
+            return
+          }
+
+          // ---- TIME RANGE ----
+          if (key === 'RANGE_MORNING') {
+            await sendMessage(
+              chatId,
+              '🟢 Sabah saatleri:',
+              timeListKeyboard(MORNING)
             )
             res.writeHead(200); res.end('ok'); return
           }
 
-          // CONTINUE
-          if (key === 'CONTINUE_SERVICES') {
-            const st = getState(chatId)
-            if (!st.services || st.services.length === 0) {
-              await sendMessage(chatId, '⚠️ لطفاً حداقل یک سرویس انتخاب کنید.')
-              res.writeHead(200); res.end('ok'); return
-            }
-            await sendMessage(chatId, 'بازه زمانی را انتخاب کنید:', timeRangeKeyboard())
+          if (key === 'RANGE_NOON') {
+            await sendMessage(
+              chatId,
+              '🟡 Öğle saatleri:',
+              timeListKeyboard(NOON)
+            )
             res.writeHead(200); res.end('ok'); return
           }
 
-          // TIME RANGE
-          if (key === 'MORE_MORNING') {
-            setTimeRange(chatId, 'MORNING')
-            await sendMessage(chatId, 'ساعت را انتخاب کنید:', moreTimesKeyboard(MORNING))
-            res.writeHead(200); res.end('ok'); return
-          }
-          if (key === 'MORE_NOON') {
-            setTimeRange(chatId, 'NOON')
-            await sendMessage(chatId, 'ساعت را انتخاب کنید:', moreTimesKeyboard(NOON))
-            res.writeHead(200); res.end('ok'); return
-          }
-          if (key === 'MORE_EVENING') {
-            setTimeRange(chatId, 'EVENING')
-            await sendMessage(chatId, 'ساعت را انتخاب کنید:', moreTimesKeyboard(EVENING))
+          if (key === 'RANGE_EVENING') {
+            await sendMessage(
+              chatId,
+              '🔵 Akşam saatleri:',
+              timeListKeyboard(EVENING)
+            )
             res.writeHead(200); res.end('ok'); return
           }
 
-          // FINAL TIME
+          // ---- FINAL TIME SELECT ----
           if (key.startsWith('TIME_')) {
-            setTime(chatId, key.replace('TIME_', ''))
-            const st = getState(chatId)
+            const time = key.replace('TIME_', '')
+            setTime(chatId, time)
 
-            const services = (st.services || [])
+            const totalMinutes = state.services.reduce((sum, id) => {
+              const s = catalog.services.find(x => x.id === id)
+              return sum + (s?.duration || 0)
+            }, 0)
+
+            const [h, m] = time.split(':').map(Number)
+            const endTotal = h * 60 + m + totalMinutes
+            const endH = String(Math.floor(endTotal / 60)).padStart(2, '0')
+            const endM = String(endTotal % 60).padStart(2, '0')
+
+            const serviceNames = state.services
               .map(id => catalog.services.find(s => s.id === id)?.name)
               .filter(Boolean)
 
             await sendMessage(
               chatId,
-              `⏰ ساعت انتخاب شد\n\nسرویس‌ها:\n• ${services.join('\n• ')}\n\nساعت شروع: ${st.time}`
+              `✅ Lütfen randevunuzu onaylayın:\n\n` +
+                `🛎 Hizmetler:\n- ${serviceNames.join('\n- ')}\n\n` +
+                `📅 Gün: ${state.date}\n` +
+                `⏰ Başlangıç: ${time}\n` +
+                `⏳ Süre: ${totalMinutes} dk\n` +
+                `🏁 Bitiş (tahmini): ${endH}:${endM}\n\n` +
+                `Onaylıyor musunuz؟`,
+              {
+                inline_keyboard: [
+                  [{ text: '✅ Onayla', callback_data: 'CONFIRM_BOOKING' }],
+                  [{ text: '🔁 Saat Değiştir', callback_data: 'CHANGE_TIME' }],
+                  [{ text: '🔁 Gün Değiştir', callback_data: 'CHANGE_DATE' }]
+                ]
+              }
+            )
+
+            res.writeHead(200)
+            res.end('ok')
+            return
+          }
+
+          // ---- CHANGE DATE / TIME ----
+          if (key === 'CHANGE_DATE') {
+            await sendMessage(
+              chatId,
+              '📅 Lütfen randevu günü seçiniz:',
+              quickDateKeyboard()
+            )
+            res.writeHead(200); res.end('ok'); return
+          }
+
+          if (key === 'CHANGE_TIME') {
+            await sendMessage(
+              chatId,
+              '⏰ Lütfen saat aralığını seçiniz:',
+              timeRangeKeyboard()
+            )
+            res.writeHead(200); res.end('ok'); return
+          }
+
+          // ---- CONFIRM ----
+          if (key === 'CONFIRM_BOOKING') {
+            await sendMessage(
+              chatId,
+              '🎉 Randevunuz alındı.\nDurum: pending\nSalon tarafından onaylanacaktır.'
             )
             res.writeHead(200); res.end('ok'); return
           }
