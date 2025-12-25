@@ -65,6 +65,41 @@ async function editMessage(chatId, messageId, text, keyboard = null) {
 async function answerCallback(callbackId) {
   return tg('answerCallbackQuery', { callback_query_id: callbackId })
 }
+async function handleTelegramUpdate(body) {
+  try {
+    const update = JSON.parse(body || '{}')
+
+    const msg = update.message
+    const cb = update.callback_query
+
+    // ---------- /start ----------
+    if (msg && msg.text && msg.text.startsWith('/start')) {
+      const chatId = msg.chat.id
+      resetState(chatId)
+
+      await sendMessage(
+        chatId,
+        'Merhaba 👋\nLütfen hizmetleri seçiniz ve devam ediniz.'
+      )
+      return
+    }
+
+    // ---------- CALLBACK ----------
+    if (cb) {
+      await answerCallback(cb.id)
+
+      const chatId = cb.message.chat.id
+      const state = getState(chatId)
+      const key = cb.data
+
+      // 👇 تمام منطق callbackهایی که قبلاً داشتی
+      // (CONTINUE_SERVICES, DATE_, RANGE_, TIME_, CONFIRM و ...)
+      // اینجا بدون هیچ res.end
+    }
+  } catch (err) {
+    console.error('UPDATE ERROR:', err)
+  }
+}
 
 // ---------------- Server ----------------
 const server = http.createServer((req, res) => {
@@ -77,14 +112,20 @@ const server = http.createServer((req, res) => {
 
   // telegram webhook
   if (req.method === 'POST' && req.url.startsWith('/telegram/webhook')) {
-    let body = ''
-    req.on('data', chunk => (body += chunk))
+  let body = ''
 
-    req.on('end', async () => {
-      try {
-        const update = JSON.parse(body || '{}')
-        const msg = update.message
-        const cb = update.callback_query
+  req.on('data', chunk => (body += chunk))
+
+  req.on('end', () => {
+    // 👈 اول پاسخ بده
+    res.writeHead(200)
+    res.end('ok')
+
+    // 👇 بعدش منطق async را جدا اجرا کن
+    handleTelegramUpdate(body)
+  })
+  return
+}
 
         // ---------- /start ----------
         if (msg && msg.text === '/start') {
