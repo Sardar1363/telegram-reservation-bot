@@ -10,8 +10,8 @@ const fetch = (...args) =>
 const PORT = process.env.PORT || 3000
 
 // ---------- Telegram API ----------
-async function sendMessage(chatId, text) {
-  await fetch(`${TELEGRAM_API}/sendMessage`, {
+function sendMessage(chatId, text) {
+  return fetch(`${TELEGRAM_API}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -53,11 +53,11 @@ const server = http.createServer((req, res) => {
     let body = ''
     req.on('data', chunk => (body += chunk))
     req.on('end', () => {
-      // ✅ پاسخ فوری
+      // ✅ پاسخ فوری به تلگرام
       res.writeHead(200)
       res.end('ok')
 
-      // پردازش جدا
+      // ⛔️ بدون await
       handleTelegramUpdate(body)
     })
     return
