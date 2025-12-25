@@ -1,105 +1,95 @@
-const catalog = require('../data/catalog')
+// ---------- DATE ----------
+const DAY_NAMES_TR = ['Pazar','Pazartesi','Salı','Çarşamba','Perşembe','Cuma','Cumartesi']
 
-// ---------- Language ----------
-function languageKeyboard() {
+function isWorkingDay(date) {
+  return date.getDay() !== 0 // Sunday off
+}
+
+function formatDate(date) {
+  return date.toISOString().split('T')[0]
+}
+
+function quickDateKeyboard() {
+  const rows = []
+  const today = new Date()
+
+  for (let i = 0; rows.length < 4; i++) {
+    const d = new Date(today)
+    d.setDate(today.getDate() + i)
+
+    if (!isWorkingDay(d)) continue
+
+    const label =
+      i === 0 ? 'Bugün' :
+      i === 1 ? 'Yarın' :
+      i === 2 ? 'Yarından Sonra' :
+      DAY_NAMES_TR[d.getDay()]
+
+    rows.push([{ text: label, callback_data: `DATE_${formatDate(d)}` }])
+  }
+
+  rows.push([{ text: '📅 Takvimden Seç', callback_data: 'OPEN_CALENDAR' }])
+  return { inline_keyboard: rows }
+}
+
+function calendarKeyboard(page = 0) {
+  const rows = []
+  let date = new Date()
+  date.setDate(date.getDate() + page * 7)
+
+  let count = 0
+  while (count < 7) {
+    if (isWorkingDay(date)) {
+      rows.push([{
+        text: `${DAY_NAMES_TR[date.getDay()]} ${date.getDate()}`,
+        callback_data: `DATE_${formatDate(date)}`
+      }])
+      count++
+    }
+    date.setDate(date.getDate() + 1)
+  }
+
+  rows.push([{ text: '➡️ Sonraki', callback_data: 'CALENDAR_NEXT' }])
+  return { inline_keyboard: rows }
+}
+
+// ---------- TIME ----------
+function timeRangeKeyboard() {
   return {
     inline_keyboard: [
-      [{ text: '🇹🇷 Türkçe', callback_data: 'LANG_TR' }],
-      [{ text: '🇮🇷 فارسی', callback_data: 'LANG_FA' }],
-      [{ text: '🇬🇧 English', callback_data: 'LANG_EN' }],
-      [{ text: '🇸🇦 العربية', callback_data: 'LANG_AR' }]
+      [{ text: '🟢 Sabah', callback_data: 'RANGE_MORNING' }],
+      [{ text: '🟡 Öğle', callback_data: 'RANGE_NOON' }],
+      [{ text: '🔵 Akşam', callback_data: 'RANGE_EVENING' }]
     ]
   }
 }
 
-// ---------- Category ----------
-function categoryKeyboard() {
+function generateTimes(start, end) {
+  const times = []
+  for (let h = start; h < end; h++) {
+    times.push(`${String(h).padStart(2,'0')}:00`)
+    times.push(`${String(h).padStart(2,'0')}:30`)
+  }
+  return times
+}
+
+const MORNING = generateTimes(9, 12)
+const NOON = generateTimes(12, 16)
+const EVENING = generateTimes(16, 20)
+
+function timeListKeyboard(times) {
   return {
-    inline_keyboard: catalog.categories.map(cat => [
-      { text: cat.title, callback_data: `CAT_${cat.id}` }
+    inline_keyboard: times.slice(0,5).map(t => [
+      { text: t, callback_data: `TIME_${t}` }
     ])
   }
 }
 
-// ---------- Services ----------
-function serviceKeyboard(categoryId, selected = []) {
-  const services = catalog.services.filter(s => s.categoryId === categoryId)
-
-  return {
-    inline_keyboard: [
-      [{ text: '🔁 Kategori Değiştir', callback_data: 'CHANGE_CATEGORY' }],
-      
-      ...services.map(s => [
-        {
-          text: `${selected.includes(s.id) ? '✔ ' : ''}${s.name} (${s.price}₺)`,
-          callback_data: `SERVICE_${s.id}`
-        }
-      ])
-    ]
-  }
-}
-
-// ---------- Time slots ----------
-function generateTimeSlots(start, end) {
-  const slots = []
-  let h = start
-  let m = 0
-
-  while (h < end) {
-    slots.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`)
-    m += 30
-    if (m >= 60) {
-      m = 0
-      h++
-    }
-  }
-  return slots
-}
-
-const MORNING = generateTimeSlots(9, 12)
-const NOON = generateTimeSlots(12, 16)
-const EVENING = generateTimeSlots(16, 20)
-
-function timeRangeKeyboard() {
-  return {
-    inline_keyboard: [
-      [
-        { text: MORNING[0], callback_data: `TIME_${MORNING[0]}` },
-        { text: MORNING[1], callback_data: `TIME_${MORNING[1]}` }
-      ],
-      [{ text: '⏰ Diğer Sabah Saatleri', callback_data: 'MORE_MORNING' }],
-
-      [
-        { text: NOON[0], callback_data: `TIME_${NOON[0]}` },
-        { text: NOON[1], callback_data: `TIME_${NOON[1]}` }
-      ],
-      [{ text: '⏰ Diğer Öğle Saatleri', callback_data: 'MORE_NOON' }],
-
-      [
-        { text: EVENING[0], callback_data: `TIME_${EVENING[0]}` },
-        { text: EVENING[1], callback_data: `TIME_${EVENING[1]}` }
-      ],
-      [{ text: '⏰ Diğer Akşam Saatleri', callback_data: 'MORE_EVENING' }]
-    ]
-  }
-}
-
-function moreTimesKeyboard(slots, startIndex = 2) {
-  const more = slots.slice(startIndex, startIndex + 5)
-  return {
-    inline_keyboard: [
-      ...more.map(t => [{ text: t, callback_data: `TIME_${t}` }]),
-      [{ text: '⬅️ Geri', callback_data: 'BACK_TO_TIME' }]
-    ]
-  }
-}
-
 module.exports = {
-  languageKeyboard,
-  categoryKeyboard,
-  serviceKeyboard,
+  quickDateKeyboard,
+  calendarKeyboard,
   timeRangeKeyboard,
-  moreTimesKeyboard,
+  timeListKeyboard,
   MORNING,
   NOON,
   EVENING

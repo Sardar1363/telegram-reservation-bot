@@ -9,55 +9,77 @@ const fetch = (...args) =>
 
 const PORT = process.env.PORT || 3000
 
-// ---------- Telegram API ----------
-function sendMessage(chatId, text) {
+// ================== Telegram API ==================
+function sendMessage(chatId, text, replyMarkup = null) {
   return fetch(`${TELEGRAM_API}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       chat_id: chatId,
-      text
+      text,
+      reply_markup: replyMarkup
     })
   })
 }
 
-// ---------- Update Handler ----------
+// ================== MAIN HANDLER ==================
 async function handleTelegramUpdate(body) {
   try {
     const update = JSON.parse(body || '{}')
 
-    if (update.message && update.message.text) {
+    // پیام متنی
+    if (update.message) {
       const chatId = update.message.chat.id
-      const text = update.message.text
+      const text = update.message.text || ''
 
-      console.log('MESSAGE:', text)
-
-      if (text.startsWith('/start')) {
-        await sendMessage(chatId, '✅ Bot çalışıyor. /start alındı.')
+      if (text === '/start') {
+        await sendMessage(
+          chatId,
+          'Merhaba 👋\nLütfen dilinizi seçiniz:'
+          // languageKeyboard() ← از فایل keyboard
+        )
+        return
       }
+
+      return
+    }
+
+    // callback_query
+    if (update.callback_query) {
+      const chatId = update.callback_query.message.chat.id
+      const data = update.callback_query.data
+
+      console.log('CALLBACK:', data)
+
+      // 👇 اینجا فقط dispatch می‌کنیم
+      // handleCallback(chatId, data)
+
+      return
     }
   } catch (err) {
-    console.error('UPDATE ERROR:', err)
+    console.error('HANDLE UPDATE ERROR:', err)
   }
 }
 
-// ---------- Server ----------
+// ================== SERVER ==================
 const server = http.createServer((req, res) => {
+  // health check
   if (req.method === 'GET' && req.url === '/') {
     res.writeHead(200)
     res.end('Bot is running')
     return
   }
 
+  // telegram webhook
   if (req.method === 'POST' && req.url === '/telegram/webhook') {
     let body = ''
     req.on('data', chunk => (body += chunk))
     req.on('end', () => {
-      // ✅ پاسخ فوری به تلگرام
+      // پاسخ فوری به تلگرام
       res.writeHead(200)
       res.end('ok')
 
-      // ⛔️ بدون await
+      // پردازش async جدا
       handleTelegramUpdate(body)
     })
     return
